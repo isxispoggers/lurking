@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>lurking</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#000;
+      --fg:#fff;
+      --scanline:#111;
+      --glow:#fff;
+      --crt-curve:8px;
+    }
+    html,body{
+      height:100%;margin:0;background:var(--bg);color:var(--fg);
+      font-family:'Press Start 2P',monospace;image-rendering:pixelated;overflow:hidden;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: repeating-linear-gradient(transparent 0%, var(--scanline) 2px, transparent 2px, transparent 4px);
+      pointer-events: none;
+      z-index: 999;
+      opacity: 0;
+      animation: scanlines 8s linear forwards;
+    }
+    @keyframes scanlines { 0%{opacity:0} 20%{opacity:1} 100%{opacity:0.8} }
+
+    canvas#snow{position:fixed;inset:0;width:100%;height:100%;z-index:0;filter: blur(1px) contrast(1.6)}
+
+    .stage{
+      position:relative;z-index:2;height:100vh;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;padding:2vw;transform:translateY(-6%)
+    }
+
+    .title{
+      font-size:clamp(16px,2.6vw,40px);letter-spacing:3px;color:var(--fg);
+      text-shadow:0 0 8px var(--glow);opacity:0;
+      animation: titleGlitch 3s ease-out forwards, flickerTitle 4s infinite 3s
+    }
+    @keyframes titleGlitch{
+      0%{opacity:0;transform:translateY(-20px) skew(0deg);} 
+      10%{opacity:1;}
+      12%,14%,16%{transform:translateX(-4px) skew(20deg);text-shadow:4px 0 #000,-4px 0 #fff;}
+      13%,15%{transform:translateX(4px) skew(-20deg);text-shadow:-4px 0 #000,4px 0 #fff;}
+      20%{transform:translateY(0) skew(0);text-shadow:0 0 8px var(--glow);} 
+      100%{opacity:1;transform:none;}
+    }
+    @keyframes flickerTitle{
+      0%,100%{opacity:1;text-shadow:0 0 8px var(--glow)}
+      50%{opacity:0.7;text-shadow:0 0 20px var(--glow)}
+    }
+
+    pre.eye{
+      font-family:monospace;white-space:pre;margin:0 auto;
+      font-size:clamp(10px,2.6vw,18px);line-height:clamp(10px,2.6vw,18px);text-align:center;
+      color:var(--fg);text-shadow:0 0 14px rgba(255,255,255,0.6),0 0 36px rgba(255,255,255,0.3);
+      cursor:pointer;opacity:0;
+      animation: eyePowerOn 3.5s ease-out forwards, eyePulse 4s infinite 3.5s
+    }
+    @keyframes eyePowerOn{
+      0%{opacity:0;transform:scale(0.8) translateY(20px);filter:blur(4px);} 
+      40%{opacity:0;} 
+      60%{opacity:0.4;transform:scale(1.02);filter:blur(1px);} 
+      100%{opacity:1;transform:scale(1);filter:blur(0);} 
+    }
+    @keyframes eyePulse{
+      0%,100%{text-shadow:0 0 14px rgba(255,255,255,0.6),0 0 36px rgba(255,255,255,0.3);} 
+      50%{text-shadow:0 0 30px #fff,0 0 80px #fff;} 
+    }
+
+    .desktop{
+      position:fixed;inset:0;z-index:10;display:none;padding:28px;
+      background:radial-gradient(ellipse at 50% 35%, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.008) 20%, transparent 60%),
+                 linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));
+      backdrop-filter:blur(0.8px) contrast(1.2);border-radius:var(--crt-curve)
+    }
+    .bg-stage {position:absolute;inset:0;filter:blur(5px);opacity:0.3;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:-1;transform:scale(1.1);}
+    .bg-stage .title {animation:none;opacity:1;text-shadow:none;}
+    .bg-stage pre.eye {animation:none;opacity:1;text-shadow:none;}
+    .icons-area{position:relative;width:100%;height:100%;filter: drop-shadow(0 0 4px rgba(255,255,255,0.15))}
+    .icon{position:absolute;width:84px;display:flex;flex-direction:column;align-items:center;gap:6px;user-select:none;cursor:grab;transition:transform 120ms ease,box-shadow 120ms ease;opacity:0;animation:iconFade 600ms ease forwards}
+    @keyframes iconFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    .thumb{width:56px;height:56px;border:2px solid rgba(255,255,255,0.9);padding:6px;border-radius:6px;background:var(--bg);box-shadow:0 4px 18px rgba(0,0,0,0.7),inset 0 0 12px rgba(255,255,255,0.06);image-rendering:pixelated}
+    .thumb img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;filter: brightness(1.1) contrast(1.3)}
+    .label{margin-top:4px;font-size:10px;text-align:center;text-shadow:0 0 6px #000,0 0 2px var(--fg)}
+    .icon.dragging{cursor:grabbing;transform:scale(1.02);z-index:9999;box-shadow:0 10px 30px rgba(0,0,0,0.7)}
+    .icon:focus-within .thumb, .icon:hover .thumb{border-color:var(--fg);box-shadow:0 6px 26px rgba(255,255,255,0.15),inset 0 0 8px rgba(255,255,255,0.1)}
+    .taskbar{position:fixed;left:0;right:0;bottom:0;height:44px;display:flex;align-items:center;padding:6px 12px;gap:12px;z-index:20;background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));border-top:1px solid rgba(255,255,255,0.08);box-shadow:0 -2px 8px rgba(255,255,255,0.06)}
+    .slot{width:64px;height:40px;border-radius:6px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s ease}
+    .slot:hover{background:rgba(255,255,255,0.05);box-shadow:0 0 8px rgba(255,255,255,0.4);transform:scale(1.02)}
+    .slot svg{filter:drop-shadow(0 0 2px var(--fg))}
+    .taskbar-slot img {width: 24px; height: 24px; image-rendering: pixelated;}
+    .slot.active {background: rgba(255,255,255,0.1); box-shadow:0 0 12px rgba(255,255,255,0.6);}
+
+    .window{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.98);width:880px;max-width:96vw;height:520px;max-height:92vh;background:#000;border:3px solid var(--fg);box-shadow:0 24px 80px rgba(0,0,0,0.8),0 0 12px rgba(255,255,255,0.3);z-index:60;opacity:0;display:none;font-family:'Press Start 2P',monospace;border-radius:var(--crt-curve)}
+    .window.show{display:block;animation:winIn .28s cubic-bezier(.2,.9,.2,1) forwards}
+    .window.hide{animation:winOut .18s ease forwards}
+    @keyframes winIn{to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+    @keyframes winOut{to{opacity:0;transform:translate(-50%,-50%) scale(0.98)}}
+
+    .win-header{height:48px;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:2px solid rgba(255,255,255,0.12);background:linear-gradient(180deg, rgba(255,255,255,0.03), transparent)}
+    .win-header .h-title{font-size:12px;color:var(--fg);text-shadow:0 0 4px rgba(255,255,255,0.4)}
+    .close-btn{width:34px;height:34px;border:2px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;border-radius:6px;cursor:pointer;transition:all .15s ease}
+    .close-btn:hover{background:rgba(255,255,255,0.05);box-shadow:0 0 8px rgba(255,255,255,0.4);transform:scale(1.05)}
+
+    .win-body{display:flex;gap:18px;padding:18px;align-items:flex-start}
+    .win-title-large{font-size:28px;letter-spacing:1px;margin:8px 0 6px 0;text-align:left;color:var(--fg);text-shadow:0 0 6px rgba(255,255,255,0.5)}
+
+    .pfp-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;flex:0 0 180px;padding:8px}
+    .pfp{width:160px;height:160px;border:3px solid var(--fg);padding:8px;border-radius:6px;background:#000;box-shadow:0 0 8px rgba(255,255,255,0.25)}
+    .pfp img{width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
+    .social-buttons{display:flex;gap:10px}
+    .pfp-discord,.pfp-telegram{width:44px;height:38px;border:2px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;border-radius:6px;cursor:pointer;transition:all .15s ease}
+    .pfp-discord img,.pfp-telegram img{width:30px;height:30px;filter:brightness(1.3)}
+    .pfp-discord:hover,.pfp-telegram:hover{box-shadow:0 0 8px rgba(255,255,255,0.4)}
+
+    .meta{flex:1;color:var(--fg);display:flex;flex-direction:column;text-shadow:0 0 4px rgba(255,255,255,0.25)}
+    .bio{font-size:13px;line-height:1.4;white-space:pre-wrap;min-height:160px}
+    .links{margin-top:12px;display:flex;gap:10px;align-items:center}
+
+    .player{position:absolute;left:18px;right:18px;bottom:18px;height:84px;border-top:2px solid rgba(255,255,255,0.04);display:flex;align-items:center;gap:12px;padding:12px;background:linear-gradient(180deg, rgba(255,255,255,0.008), rgba(255,255,255,0.003))}
+    .player-cover{width:72px;height:72px;border:2px solid var(--fg);padding:6px;border-radius:6px;background:#000;flex:0 0 72px;box-shadow:0 0 6px rgba(255,255,255,0.25)}
+    .player-cover img{width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
+    .controls{display:flex;flex-direction:column;gap:6px;min-width:320px}
+    .controls-top{display:flex;align-items:center;gap:8px}
+    .play-btn,.pause-btn,.stop-btn{width:48px;height:44px;border:2px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;border-radius:6px;cursor:pointer;transition:all .15s ease}
+    .play-btn:hover,.pause-btn:hover,.stop-btn:hover{background:rgba(255,255,255,0.05);box-shadow:0 0 12px rgba(255,255,255,0.4);transform:scale(1.05)}
+    .play-btn svg,.pause-btn svg,.stop-btn svg{width:20px;height:20px;fill:var(--fg);filter:drop-shadow(0 0 4px #fff)}
+    .pause-btn{display:none}
+    .seek{display:flex;flex-direction:column;gap:6px;flex:1}
+    .seek input[type=range]{width:100%;accent-color:var(--fg)}
+    .time-row{display:flex;justify-content:space-between;font-size:11px;opacity:0.9;color:var(--fg)}
+
+    #snakeCanvas {background: #000; border: 2px solid var(--fg); image-rendering: pixelated; box-shadow:0 0 8px rgba(255,255,255,0.25);}
+    #ticCanvas {background: #000; border: 2px solid var(--fg); image-rendering: pixelated; box-shadow:0 0 8px rgba(255,255,255,0.25);}
+    button {font-family:'Press Start 2P',monospace; background:var(--bg); color:var(--fg); border:2px solid var(--fg); padding:10px 20px; cursor:pointer; margin:10px; text-shadow:0 0 4px #fff; transition:all .15s ease;}
+    button:hover {background:rgba(255,255,255,0.12); box-shadow:0 0 8px #fff; transform:scale(1.02);} 
+
+    .pc-info-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding: 16px;
+      font-size: 11px;
+      line-height: 1.3;
+      overflow-y: auto;
+      height: calc(100% - 32px);
+      color:var(--fg);
+    }
+    .pc-info-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow:inset 0 0 4px rgba(255,255,255,0.12);
+    }
+    .pc-info-title {
+      font-size: 13px;
+      color: var(--fg);
+      text-shadow: 0 0 6px #fff;
+      letter-spacing: 1px;
+      border-bottom: 1px dashed rgba(255,255,255,0.12);
+      padding-bottom: 4px;
+    }
+    .pc-info-item {
+      display: flex;
+      justify-content: space-between;
+      opacity: 0.9;
+    }
+    .pc-info-label { opacity: 0.7; }
+    .pc-info-value { text-align: right; }
+
+    .tic-controls { display:flex;gap:10px;align-items:center;flex-direction:column;padding:12px }
+    .difficulty-row{display:flex;gap:8px;align-items:center;}
+    .difficulty-row input{margin-right:6px}
+
+    @media(max-width:780px){
+      .pc-info-container { grid-template-columns: 1fr; }
+      .window{width:94vw;height:88vh}
+      .pfp,.cover{flex:0 0 120px;height:120px}
+      .player-cover{width:56px;height:56px}
+      .win-title-large{font-size:20px}
+    }
+  </style>
+</head>
+<body>
+  <canvas id="snow"></canvas>
+
+  <div class="stage" id="stage">
+    <div class="title">lurki.ng</div>
+    <pre class="eye" id="eye">[ click here 2 boot ]</pre>
+  </div>
+
+  <div class="desktop" id="desktop">
+    <div class="bg-stage">
+      <div class="title">lurki.ng</div>
+      <pre class="eye">[booted]</pre>
+    </div>
+    <div class="icons-area" id="iconsArea">
+      <div class="icon" id="klout" data-key="klout" style="left:28px;top:28px" tabindex="0"><div class="thumb"><img src="klout.png" alt="klout"></div><div class="label">klout</div></div>
+      <div class="icon" id="emre" data-key="emre" style="left:28px;top:124px" tabindex="0"><div class="thumb"><img src="emre.png" alt="emre"></div><div class="label">emre</div></div>
+      <div class="icon" id="montana" data-key="montana" style="left:28px;top:220px" tabindex="0"><div class="thumb"><img src="montana.png" alt="montana"></div><div class="label">montana</div></div>
+      <div class="icon" id="kai" data-key="kai" style="left:28px;top:316px" tabindex="0"><div class="thumb"><img src="khaled.png" alt="kai"></div><div class="label">kai</div></div>
+      <div class="icon" id="snake" data-key="snake" style="left:calc(100% - 112px);top:28px" tabindex="0"><div class="thumb"><img src="snake.png" alt="snake game"></div><div class="label">Snake Game</div></div>
+      <!-- Tic Tac Toe icon added directly below Snake Game -->
+      <div class="icon" id="tictac" data-key="tictac" style="left:calc(100% - 112px);top:124px" tabindex="0"><div class="thumb"><img src="tictactoe.png" alt="tic tac toe"></div><div class="label">Tic Tac Toe</div></div>
+      <div class="icon" id="thispc" data-key="thispc" style="left:calc(100% - 112px);top:calc(100% - 100px)" tabindex="0"><div class="thumb"><img src="thispc.png" alt="this pc"></div><div class="label">This PC</div></div>
+    </div>
+
+    <div class="taskbar">
+      <div class="slot" id="shutdown" title="Shutdown">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="6" x2="12" y2="12"></line>
+        </svg>
+      </div>
+      <div id="taskbar-apps" style="display:flex; gap:12px;"></div>
+      <div style="flex:1"></div>
+      <div style="font-size:11px;opacity:0.7">lurki.ng</div>
+    </div>
+  </div>
+
+  <div class="window" id="kloutWin" role="dialog" aria-hidden="true">
+    <div class="win-header">
+      <div class="h-title">klout</div>
+      <div class="close-btn" id="winClose" title="Close">X</div>
+    </div>
+    <div class="win-body">
+      <div class="pfp-wrap">
+        <div class="pfp"><img id="pfpImg" src="klout.png" alt="pfp"></div>
+        <div class="social-buttons">
+          <div class="pfp-discord" id="pfpDiscord" title="Open Discord"><img src="discord.png" alt="discord"></div>
+          <div class="pfp-telegram" id="pfpTelegram" title="Open Telegram"><img src="telegram.png" alt="telegram"></div>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:10px">
+        <div class="win-title-large" id="winTitleLarge">klout</div>
+        <div class="meta">
+          <div id="typeBio" class="bio"></div>
+        </div>
+      </div>
+    </div>
+    <div class="player">
+      <div class="player-cover"><img id="coverImg" src="kloutcover.png" alt="cover"></div>
+      <div class="controls">
+        <div class="controls-top">
+          <div class="play-btn" id="playBtn" title="Play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7L8 5z"/></svg></div>
+          <div class="pause-btn" id="pauseBtn" title="Pause"><svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg></div>
+          <div class="stop-btn" id="stopBtn" title="Stop"><svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg></div>
+          <div style="width:12px"></div>
+          <div class="track-info">
+            <div id="trackName">u dont want that hoe</div>
+            <div id="trackAuthor" style="font-size:10px;opacity:0.8">your prom date</div>
+          </div>
+        </div>
+        <div class="seek">
+          <input type="range" id="seekBar" min="0" max="100" value="0">
+          <div class="time-row"><div id="curTime">0:00</div><div id="durTime">0:00</div></div>
+        </div>
+      </div>
+      <div style="flex:1"></div>
+    </div>
+    <audio id="kloutAudio" src="klout.mp3" preload="auto"></audio>
+  </div>
+
+  <div class="window" id="snakeWin" role="dialog" aria-hidden="true">
+    <div class="win-header">
+      <div class="h-title">Snake Game</div>
+      <div class="close-btn" id="snakeClose" title="Close">X</div>
+    </div>
+    <div class="win-body" style="justify-content:flex-start;align-items:center;flex-direction:column;position:relative;padding:0;height:calc(100% - 48px);overflow:hidden;">
+      <div style="width:100%;text-align:center;font-size:16px;margin:5px 0;color:var(--fg);text-shadow:0 0 4px rgba(255,255,255,0.3);">Score: <span id="score">0</span></div>
+      <div id="menu" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(0,0,0,0.8);z-index:10;">
+        <button id="startBtn">Start Game</button>
+      </div>
+      <canvas id="snakeCanvas" width="400" height="400"></canvas>
+      <div id="gameOver" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;flex-direction:column;justify-content:center;align-items:center;background:rgba(0,0,0,0.8);z-index:10;">
+        <div style="margin-bottom:10px;">Game Over! Score: <span id="finalScore"></span></div>
+        <button id="tryAgainBtn">Try Again</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Tic Tac Toe window -->
+  <div class="window" id="ticWin" role="dialog" aria-hidden="true">
+    <div class="win-header">
+      <div class="h-title">Tic Tac Toe</div>
+      <div class="close-btn" id="ticClose" title="Close">X</div>
+    </div>
+    <div class="win-body" style="flex-direction:column;align-items:center;justify-content:center;gap:12px;position:relative;padding:12px;height:calc(100% - 48px);">
+      <div style="font-size:12px;margin-bottom:4px;color:var(--fg);">Difficulty:</div>
+      <div class="difficulty-row" style="margin-bottom:10px;">
+        <label><input type="radio" name="ticDiff" value="easy" checked> Easy</label>
+        <label><input type="radio" name="ticDiff" value="medium"> Medium</label>
+        <label><input type="radio" name="ticDiff" value="hard"> Hard</label>
+      </div>
+      <div id="ticControls" class="tic-controls">
+        <div style="font-size:12px;color:var(--fg);">You are X — click a cell to play</div>
+        <button id="ticStartBtn">Start / Restart</button>
+      </div>
+      <canvas id="ticCanvas" width="360" height="360" style="touch-action:none;">Your browser doesn't support canvas.</canvas>
+
+      <div id="ticOverlay" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;flex-direction:column;justify-content:center;align-items:center;background:rgba(0,0,0,0.85);z-index:10;">
+        <div id="ticResultMsg" style="margin-bottom:12px;font-size:14px;color:var(--fg);"></div>
+        <div style="display:flex;gap:10px;flex-direction:column;align-items:center;">
+          <div style="display:flex;gap:10px;"><button id="ticTryAgain">Try Again</button><button id="ticChangeDiff">Change Difficulty</button></div>
+          <button id="ticCloseBtnSecondary">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="window" id="pcWin" role="dialog" aria-hidden="true">
+    <div class="win-header">
+      <div class="h-title">This PC</div>
+      <div class="close-btn" id="pcClose" title="Close">X</div>
+    </div>
+    <div class="win-body" style="padding:0;height:calc(100% - 48px);">
+      <div class="pc-info-container" id="pcInfoContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('snow');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+
+    const matrix = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789@#$%^&*()*&^%+-=[]{}|;':,.<>?/\\";
+    const fontSize = 14;
+    let columns = canvas.width / fontSize;
+    const drops = Array(Math.floor(columns)).fill(1);
+
+    function drawMatrix() {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#fff';
+      ctx.font = fontSize + 'px monospace';
+      for (let i = 0; i < drops.length; i++) {
+        const text = matrix[Math.floor(Math.random() * matrix.length)];
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+        drops[i]++;
+      }
+    }
+    let matrixInterval = setInterval(drawMatrix, 35);
+
+    function startSnow() {
+      let x = 0;
+      return setInterval(() => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < 60; i++) {
+          const size = Math.random() * 2.5;
+          ctx.fillStyle = '#fff';
+          ctx.globalAlpha = Math.random() * 0.7 + 0.3;
+          ctx.fillRect(Math.random() * canvas.width, x, size, size);
+        }
+        x += 1.5;
+        if (x > canvas.height) x = 0;
+      }, 50);
+    }
+
+    const eye = document.getElementById('eye');
+    const stage = document.getElementById('stage');
+    const desktop = document.getElementById('desktop');
+    eye.addEventListener('click', () => {
+      clearInterval(matrixInterval);
+      stage.style.display = 'none';
+      desktop.style.display = 'block';
+      requestAnimationFrame(() => desktop.style.opacity = '1');
+      startSnow();
+    });
+
+    function typeText(el, text, speed=20, cb){ 
+      if (el._typeInterval) { clearInterval(el._typeInterval); el._typeInterval = null; }
+      el.textContent='';
+      let i=0; 
+      const t = setInterval(()=>{ 
+        el.textContent += text.charAt(i); 
+        i++; 
+        if(i>=text.length){ 
+          clearInterval(t); 
+          el._typeInterval = null; 
+          if(cb) cb(); 
+        } 
+      }, speed); 
+      el._typeInterval = t;
+    }
+
+    const icons = Array.from(document.querySelectorAll('.icon'));
+    let active=null,startX=0,startY=0,ox=0,oy=0; const GRID=8;
+    const clickCooldown = {};
+    const COOLDOWN_MS = 2000;
+
+    function save(){ const map={}; icons.forEach(icon=>{ map[icon.dataset.key] = { left: parseFloat(icon.style.left)||0, top: parseFloat(icon.style.top)||0 }; }); localStorage.setItem('lurking.desktop.positions.v1', JSON.stringify(map)); }
+    function load(){ try{ const map=JSON.parse(localStorage.getItem('lurking.desktop.positions.v1')||'{}'); icons.forEach(icon=>{ const key = icon.dataset.key; if(map[key]){ icon.style.left = map[key].left+'px'; icon.style.top = map[key].top+'px'; } }); }catch(e){} }
+    icons.forEach((icon,i)=>{
+      let moved=false;
+      icon.addEventListener('pointerdown', e=>{ e.preventDefault(); try{ icon.setPointerCapture(e.pointerId); }catch(e){}
+        active=icon; startX=e.clientX; startY=e.clientY; ox=parseFloat(icon.style.left)||0; oy=parseFloat(icon.style.top)||0; icon.classList.add('dragging'); moved=false;
+      });
+      icon.addEventListener('pointermove', e=>{ if(!active || active!==icon) return;
+        const dx = e.clientX - startX; const dy = e.clientY - startY;
+        if(Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+        moved = true; let nx = ox + dx; let ny = oy + dy; nx = Math.max(8, Math.min(window.innerWidth - active.offsetWidth - 8, nx)); ny = Math.max(8, Math.min(window.innerHeight - active.offsetHeight - 48, ny)); nx = Math.round(nx/GRID)*GRID; ny = Math.round(ny/GRID)*GRID; active.style.left = nx+'px'; active.style.top = ny+'px';
+      });
+      icon.addEventListener('pointerup', e=>{ if(active){ active.classList.remove('dragging'); active=null; save(); } });
+      icon.addEventListener('pointercancel', ()=>{ if(active){ active.classList.remove('dragging'); active=null; save(); } });
+      icon.addEventListener('dblclick', ()=>{ const top = 28 + i*96; icon.style.left='28px'; icon.style.top=top+'px'; save(); });
+      icon._moved=false; icon.addEventListener('pointerdown', ()=>{ icon._moved=false; }); icon.addEventListener('pointermove', ()=>{ icon._moved=true; }); icon.addEventListener('pointerup', ()=>{ setTimeout(()=>icon._moved=false,50); });
+    });
+    window.addEventListener('pointerup', ()=>{ if(active){ active.classList.remove('dragging'); active=null; save(); } });
+    load();
+
+    const profiles = {
+      klout: { title: 'klout', bio: '18 yr old with special needs and a programmer', pfp: 'klout.png', audio: 'klout.mp3', cover: 'kloutcover.png', trackName: 'u dont want that hoe', trackAuthor: 'your prom date', discordLink: 'https://discord.com/users/1198763703428989085', telegramLink: null },
+      emre: { title: 'emre', bio: 'love all my day 1s', pfp: 'emre.png', audio: 'emre.mp3', cover: 'emrecover.png', trackName: 'steep one', trackAuthor: 'xaviersobased', discordLink: 'https://discord.com/users/1421488646158291045', telegramLink: 'https://t.me/wealthywizard911' },
+      montana: { title: 'montana', bio: 'rarely seen but im always noticed or like a perfectionist my money pristine', pfp: 'montana.png', audio: 'montana.mp3', cover: 'montanacover.png', trackName: 'bipolar', trackAuthor: 'beige', discordLink: null, telegramLink: null },
+      kai: { title: 'kai', bio: 'I feel like all these girls want duke dennis they dont want me', pfp: 'khaled.png', audio: 'khaled.mp3', cover: 'khaledcover.png', trackName: 'ugly as fuck and forever alone', trackAuthor: 'wifiskeleton', discordLink: 'https://discord.com/users/1288109481787658270', telegramLink: null }
+    };
+
+    const kloutWin = document.getElementById('kloutWin');
+    kloutWin.dataset.key = 'profile';
+    const snakeWin = document.getElementById('snakeWin');
+    snakeWin.dataset.key = 'snake';
+    const ticWin = document.getElementById('ticWin');
+    ticWin.dataset.key = 'tictac';
+    const pcWin = document.getElementById('pcWin');
+    pcWin.dataset.key = 'thispc';
+
+    const windowMap = {
+      'profile': kloutWin,
+      'snake': snakeWin,
+      'tictac': ticWin,
+      'thispc': pcWin
+    };
+
+    let maxZ = 60;
+
+    function setActiveSlot(key) {
+      document.querySelectorAll('.taskbar-slot').forEach(s => s.classList.remove('active'));
+      const slot = document.querySelector(`.taskbar-slot[data-key="${key}"]`);
+      if (slot) slot.classList.add('active');
+    }
+
+    const winHeaderTitle = kloutWin.querySelector('.h-title');
+    const winTitle = document.getElementById('winTitleLarge');
+    const typeBioEl = document.getElementById('typeBio');
+    const winClose = document.getElementById('winClose');
+    const audio = document.getElementById('kloutAudio');
+    const playBtn = document.getElementById('playBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const seekBar = document.getElementById('seekBar');
+    const curTime = document.getElementById('curTime');
+    const durTime = document.getElementById('durTime');
+    const pfpImg = document.getElementById('pfpImg');
+    const coverImg = document.getElementById('coverImg');
+    const trackNameEl = document.getElementById('trackName');
+    const trackAuthorEl = document.getElementById('trackAuthor');
+    const pfpDiscordBtn = document.getElementById('pfpDiscord');
+    const pfpTelegramBtn = document.getElementById('pfpTelegram');
+    const snakeClose = document.getElementById('snakeClose');
+    const pcClose = document.getElementById('pcClose');
+    const pcInfoContainer = document.getElementById('pcInfoContainer');
+    const taskbarApps = document.getElementById('taskbar-apps');
+
+    let currentProfile = 'klout';
+
+    function msToTime(s){ s = Math.floor(s); const m = Math.floor(s/60); const sec = s%60; return m+':'+(sec<10?'0'+sec:sec); }
+    function canActivate(id){ const now = Date.now(); if(!clickCooldown[id] || (now - clickCooldown[id]) > COOLDOWN_MS){ clickCooldown[id] = now; return true; } return false; }
+
+    function addOrUpdateTaskbarItem(key, title, iconSrc) {
+      let slot = document.querySelector(`.taskbar-slot[data-key="${key}"]`);
+      if (!slot) {
+        slot = document.createElement('div');
+        slot.classList.add('slot', 'taskbar-slot');
+        slot.dataset.key = key;
+        slot.innerHTML = `<img src="${iconSrc}" alt="${title}">`;
+        slot.title = title;
+        taskbarApps.appendChild(slot);
+        slot.addEventListener('click', () => {
+          const win = windowMap[key];
+          if (win && win.style.display !== 'none') {
+            win.style.zIndex = ++maxZ;
+            setActiveSlot(key);
+          }
+        });
+      } else {
+        slot.innerHTML = `<img src="${iconSrc}" alt="${title}">`;
+        slot.title = title;
+      }
+    }
+    function removeTaskbarItem(key) {
+      const slot = document.querySelector(`.taskbar-slot[data-key="${key}"]`);
+      if (slot) slot.remove();
+    }
+
+    function openProfile(id){
+      if(!profiles[id]) return;
+      if(!canActivate('openProfile:' + id)) return;
+      const p = profiles[id];
+      currentProfile = id;
+      kloutWin.style.display='block'; kloutWin.classList.remove('hide'); kloutWin.classList.add('show');
+      winHeaderTitle.textContent = p.title;
+      winTitle.textContent=''; typeText(winTitle, p.title, 50, ()=>{ typeText(typeBioEl, p.bio, 28); });
+      pfpImg.src = p.pfp; coverImg.src = p.cover;
+      trackNameEl.textContent = p.trackName; trackAuthorEl.textContent = p.trackAuthor;
+      pfpDiscordBtn.style.display = p.discordLink ? 'flex' : 'none';
+      pfpTelegramBtn.style.display = p.telegramLink ? 'flex' : 'none';
+      try{ audio.pause(); audio.currentTime = 0; }catch(e){}
+      audio.src = p.audio; audio.load(); audio.volume = 1;
+      audio.play().catch(()=>{});
+      playBtn.style.display = 'none'; pauseBtn.style.display = 'flex';
+      addOrUpdateTaskbarItem('profile', p.title, p.pfp);
+      kloutWin.style.zIndex = ++maxZ;
+      setActiveSlot('profile');
+    }
+
+    function closeKlout(){
+      if(!canActivate('kloutClose')) return;
+      if (winTitle._typeInterval) clearInterval(winTitle._typeInterval);
+      if (typeBioEl._typeInterval) clearInterval(typeBioEl._typeInterval);
+      if(audio && !audio.paused){
+        const vol = audio.volume; const fadeDur = 300; const step = 50; const steps = Math.ceil(fadeDur/step); let n=0;
+        const iv = setInterval(()=>{ n++; audio.volume = Math.max(0, vol * (1 - n/steps)); if(n>=steps){ clearInterval(iv); audio.pause(); audio.currentTime = 0; audio.volume = vol; } }, step);
+      }
+      kloutWin.classList.remove('show'); kloutWin.classList.add('hide');
+      setTimeout(()=>{ kloutWin.style.display='none'; kloutWin.classList.remove('hide'); winTitle.textContent=''; typeBioEl.textContent=''; removeTaskbarItem('profile'); }, 220);
+    }
+
+    const kloutIcon = document.getElementById('klout');
+    const emreIcon = document.getElementById('emre');
+    const montanaIcon = document.getElementById('montana');
+    const kaiIcon = document.getElementById('kai');
+    const snakeIcon = document.getElementById('snake');
+    const ticIcon = document.getElementById('tictac');
+    const thispcIcon = document.getElementById('thispc');
+
+    kloutIcon.addEventListener('click', e=>{ if(kloutIcon._moved) return; if(!canActivate('kloutIcon')) return; openProfile('klout'); });
+    emreIcon.addEventListener('click', e=>{ if(emreIcon._moved) return; if(!canActivate('emreIcon')) return; openProfile('emre'); });
+    montanaIcon.addEventListener('click', e=>{ if(montanaIcon._moved) return; if(!canActivate('montanaIcon')) return; openProfile('montana'); });
+    kaiIcon.addEventListener('click', e=>{ if(kaiIcon._moved) return; if(!canActivate('kaiIcon')) return; openProfile('kai'); });
+    winClose.addEventListener('click', closeKlout);
+
+    pfpDiscordBtn.addEventListener('click', ()=>{ if(!canActivate('discordLink')) return; const p = profiles[currentProfile]; if(p && p.discordLink) window.open(p.discordLink, '_blank'); });
+    pfpTelegramBtn.addEventListener('click', ()=>{ if(!canActivate('telegramLink')) return; const p = profiles[currentProfile]; if(p && p.telegramLink) window.open(p.telegramLink, '_blank'); });
+
+    playBtn.addEventListener('click', () => { if (!canActivate('playBtn')) return; audio.play().catch(() => {}); playBtn.style.display = 'none'; pauseBtn.style.display = 'flex'; });
+    pauseBtn.addEventListener('click', () => { if (!canActivate('pauseBtn')) return; audio.pause(); pauseBtn.style.display = 'none'; playBtn.style.display = 'flex'; });
+    stopBtn.addEventListener('click', () => { if (!canActivate('stopBtn')) return; audio.pause(); audio.currentTime = 0; pauseBtn.style.display = 'none'; playBtn.style.display = 'flex'; updateSeek(); });
+    audio.addEventListener('loadedmetadata', () => { seekBar.max = Math.floor(audio.duration); durTime.textContent = msToTime(audio.duration); });
+    audio.addEventListener('timeupdate', updateSeek);
+    function updateSeek(){ seekBar.value = Math.floor(audio.currentTime); curTime.textContent = msToTime(audio.currentTime); }
+    seekBar.addEventListener('input', () => { audio.currentTime = seekBar.value; updateSeek(); });
+
+    document.getElementById('shutdown').addEventListener('click', ()=>{
+      if(!canActivate('shutdown')) return;
+      if(kloutWin.style.display !== 'none') closeKlout();
+      if(snakeWin.style.display !== 'none') closeSnake();
+      if(pcWin.style.display !== 'none') closePC();
+      if(ticWin.style.display !== 'none') closeTic();
+      setTimeout(() => { desktop.style.display='none'; stage.style.display='flex'; }, 220);
+    });
+
+    let snakeGameInterval;
+    const snakeCanvas = document.getElementById('snakeCanvas');
+    const snakeCtx = snakeCanvas.getContext('2d');
+    const gridSize = 20;
+    let tileCount;
+    let snake; let dx; let dy; let apple; let score; let gameOver;
+
+    function resetGame() {
+      tileCount = snakeCanvas.width / gridSize;
+      snake = [{x: Math.floor(tileCount/2), y: Math.floor(tileCount/2)}, {x: Math.floor(tileCount/2)-1, y: Math.floor(tileCount/2)}, {x: Math.floor(tileCount/2)-2, y: Math.floor(tileCount/2)}];
+      dx = 1; dy = 0;
+      apple = {x: Math.floor(Math.random() * tileCount), y: Math.floor(Math.random() * tileCount)};
+      score = 0; gameOver = false;
+      document.getElementById('score').textContent = score;
+      draw();
+    }
+    function draw() {
+      snakeCtx.clearRect(0, 0, snakeCanvas.width, snakeCanvas.height);
+      snakeCtx.fillStyle = '#fff';
+      snake.forEach(part => { snakeCtx.fillRect(part.x * gridSize, part.y * gridSize, gridSize - 2, gridSize - 2); });
+      snakeCtx.fillRect(apple.x * gridSize, apple.y * gridSize, gridSize - 2, gridSize - 2);
+    }
+    function update() {
+      if (gameOver) return;
+      const head = {x: snake[0].x + dx, y: snake[0].y + dy};
+      if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) { endGame(); return; }
+      for (let i = 1; i < snake.length; i++) { if (head.x === snake[i].x && head.y === snake[i].y) { endGame(); return; } }
+      snake.unshift(head);
+      if (head.x === apple.x && head.y === apple.y) { score++; document.getElementById('score').textContent = score; apple = {x: Math.floor(Math.random() * tileCount), y: Math.floor(Math.random() * tileCount)}; } else { snake.pop(); }
+      draw();
+    }
+    function endGame() {
+      gameOver = true; clearInterval(snakeGameInterval);
+      document.getElementById('finalScore').textContent = score;
+      document.getElementById('gameOver').style.display = 'flex';
+    }
+    document.addEventListener('keydown', e => {
+      const key = e.key.toLowerCase();
+      if ((key === 'arrowup' || key === 'w') && dy !== 1) { dx = 0; dy = -1; }
+      if ((key === 'arrowdown' || key === 's') && dy !== -1) { dx = 0; dy = 1; }
+      if ((key === 'arrowleft' || key === 'a') && dx !== 1) { dx = -1; dy = 0; }
+      if ((key === 'arrowright' || key === 'd') && dx !== -1) { dx = 1; dy = 0; }
+    });
+    function startGame() { resetGame(); snakeGameInterval = setInterval(update, 100); }
+    function openSnake() {
+      if(!canActivate('openSnake')) return;
+      snakeWin.style.display='block'; snakeWin.classList.remove('hide'); snakeWin.classList.add('show');
+      document.getElementById('menu').style.display = 'flex'; document.getElementById('gameOver').style.display = 'none';
+      const winBody = snakeWin.querySelector('.win-body');
+      const scoreDiv = winBody.querySelector('div[style*="text-align:center"]');
+      const availableHeight = winBody.clientHeight - (scoreDiv.offsetHeight + 10);
+      const size = Math.floor(Math.min(availableHeight, winBody.clientWidth, 400) / gridSize) * gridSize;
+      snakeCanvas.width = size; snakeCanvas.height = size;
+      addOrUpdateTaskbarItem('snake', 'Snake Game', 'snake.png');
+      snakeWin.style.zIndex = ++maxZ;
+      setActiveSlot('snake');
+    }
+    function closeSnake() {
+      if(!canActivate('snakeClose')) return;
+      if (snakeGameInterval) clearInterval(snakeGameInterval);
+      snakeWin.classList.remove('show'); snakeWin.classList.add('hide');
+      setTimeout(() => { snakeWin.style.display='none'; snakeWin.classList.remove('hide'); removeTaskbarItem('snake'); }, 220);
+    }
+    snakeIcon.addEventListener('click', e => { if(snakeIcon._moved) return; openSnake(); });
+    snakeClose.addEventListener('click', closeSnake);
+    document.getElementById('startBtn').addEventListener('click', () => { document.getElementById('menu').style.display = 'none'; startGame(); });
+    document.getElementById('tryAgainBtn').addEventListener('click', () => { document.getElementById('gameOver').style.display = 'none'; startGame(); });
+
+    const ticCanvas = document.getElementById('ticCanvas');
+    const ticCtx = ticCanvas.getContext('2d');
+    const ticClose = document.getElementById('ticClose');
+    const ticStartBtn = document.getElementById('ticStartBtn');
+    const ticOverlay = document.getElementById('ticOverlay');
+    const ticResultMsg = document.getElementById('ticResultMsg');
+    const ticTryAgain = document.getElementById('ticTryAgain');
+    const ticChangeDiff = document.getElementById('ticChangeDiff');
+    const ticCloseBtnSecondary = document.getElementById('ticCloseBtnSecondary');
+
+    let ticSize = 360;
+    let cellSize = ticSize/3;
+    let board = Array(9).fill(null);
+    let human = 'X';
+    let ai = 'O';
+    let currentPlayer = 'X';
+    let ticDifficulty = 'easy';
+    let gameActive = false;
+
+    function renderTic() {
+      ticCtx.clearRect(0,0,ticCanvas.width,ticCanvas.height);
+      ticCtx.fillStyle = '#000';
+      ticCtx.fillRect(0,0,ticCanvas.width,ticCanvas.height);
+      ticCtx.strokeStyle = '#fff';
+      ticCtx.lineWidth = 6;
+      ticCtx.lineCap = 'square';
+      ticCtx.beginPath();
+      ticCtx.moveTo(cellSize,0); ticCtx.lineTo(cellSize,ticSize);
+      ticCtx.moveTo(2*cellSize,0); ticCtx.lineTo(2*cellSize,ticSize);
+      ticCtx.moveTo(0,cellSize); ticCtx.lineTo(ticSize,cellSize);
+      ticCtx.moveTo(0,2*cellSize); ticCtx.lineTo(ticSize,2*cellSize);
+      ticCtx.stroke();
+      for (let i=0;i<9;i++){
+        const val = board[i];
+        const x = (i%3)*cellSize; const y = Math.floor(i/3)*cellSize;
+        if(val==='X') drawPixelX(x,y);
+        if(val==='O') drawPixelO(x,y);
+      }
+    }
+    function drawPixelX(x,y){
+      const pad = cellSize*0.18;
+      const s = cellSize - pad*2;
+      ticCtx.strokeStyle='#fff'; ticCtx.lineWidth = Math.max(6, Math.floor(cellSize*0.12));
+      ticCtx.beginPath();
+      ticCtx.moveTo(x+pad,y+pad); ticCtx.lineTo(x+pad+s,y+pad+s);
+      ticCtx.moveTo(x+pad+s,y+pad); ticCtx.lineTo(x+pad,y+pad+s);
+      ticCtx.stroke();
+    }
+    function drawPixelO(x,y){
+      const pad = cellSize*0.18;
+      const s = cellSize - pad*2;
+      ticCtx.strokeStyle='#fff'; ticCtx.lineWidth = Math.max(6, Math.floor(cellSize*0.12));
+      ticCtx.beginPath();
+      ticCtx.arc(x+cellSize/2,y+cellSize/2,s/2,0,Math.PI*2);
+      ticCtx.stroke();
+    }
+
+    function checkWinner(b){
+      const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+      for (const [a,b1,c] of wins){
+        if (b[a] && b[a]===b[b1] && b[a]===b[c]) return b[a];
+      }
+      if (b.every(Boolean)) return 'tie';
+      return null;
+    }
+
+    function availableMoves(b){ return b.map((v,i)=>v?null:i).filter(v=>v!==null); }
+
+    function aiMoveEasy(){
+      const avail = availableMoves(board);
+      return avail[Math.floor(Math.random()*avail.length)];
+    }
+    function aiMoveMedium(){
+      const avail = availableMoves(board);
+      for (const i of avail){ const copy = board.slice(); copy[i]=ai; if(checkWinner(copy)===ai) return i; }
+      for (const i of avail){ const copy = board.slice(); copy[i]=human; if(checkWinner(copy)===human) return i; }
+      if (board[4]===null) return 4;
+      return avail[Math.floor(Math.random()*avail.length)];
+    }
+    function aiMoveHard(){
+      function minimax(bord, player){
+        const winner = checkWinner(bord);
+        if (winner===ai) return {score: 10};
+        if (winner===human) return {score: -10};
+        if (winner==='tie') return {score: 0};
+        const moves = [];
+        for (const i of availableMoves(bord)){
+          const move = {};
+          move.index = i;
+          bord[i] = player;
+          const result = minimax(bord, player===ai?human:ai);
+          move.score = result.score;
+          bord[i] = null;
+          moves.push(move);
+        }
+        let bestMove;
+        if (player===ai){
+          let bestScore = -Infinity; for (const m of moves) if (m.score>bestScore){ bestScore=m.score; bestMove=m; }
+        } else {
+          let bestScore = Infinity; for (const m of moves) if (m.score<bestScore){ bestScore=m.score; bestMove=m; }
+        }
+        return bestMove;
+      }
+      const copy = board.slice();
+      const move = minimax(copy, ai);
+      return move ? move.index : aiMoveMedium();
+    }
+
+    function pickAIMove(){
+      const diff = ticDifficulty;
+      if (diff==='easy') return aiMoveEasy();
+      if (diff==='medium') return aiMoveMedium();
+      return aiMoveHard();
+    }
+
+    function humanPlay(idx){
+      if (!gameActive) return;
+      if (currentPlayer !== human) return;
+      if (board[idx]) return;
+      board[idx]=human; currentPlayer = ai;
+      renderTic();
+      const winner = checkWinner(board);
+      if (winner){ endTic(winner); return; }
+      setTimeout(()=>{ const aiIdx = pickAIMove(); board[aiIdx]=ai; currentPlayer=human; renderTic(); const w = checkWinner(board); if (w) endTic(w); }, 300);
+    }
+
+    function endTic(winner){
+      gameActive = false;
+      ticOverlay.style.display='flex';
+      if (winner==='tie') ticResultMsg.textContent = 'Tie!';
+      else if (winner===human) ticResultMsg.textContent = 'You Win!';
+      else ticResultMsg.textContent = 'You Lose!';
+    }
+
+    function startTic(){
+      const sel = document.querySelector('input[name="ticDiff"]:checked');
+      ticDifficulty = sel ? sel.value : 'easy';
+      board = Array(9).fill(null);
+      currentPlayer = 'X';
+      gameActive = true;
+      ticOverlay.style.display='none';
+      const winBody = ticWin.querySelector('.win-body');
+      const space = Math.min(winBody.clientWidth - 120, winBody.clientHeight - 120, 360);
+      ticSize = Math.max(240, Math.floor(space/3)*3);
+      ticCanvas.width = ticSize; ticCanvas.height = ticSize; cellSize = ticSize/3;
+      renderTic();
+    }
+
+    ticCanvas.addEventListener('pointerdown', (e)=>{
+      if (!gameActive) return;
+      const rect = ticCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+      const cx = Math.floor(x / cellSize); const cy = Math.floor(y / cellSize); const idx = cy*3 + cx;
+      humanPlay(idx);
+    });
+
+    ticStartBtn.addEventListener('click', ()=>{ startTic(); });
+    ticTryAgain.addEventListener('click', ()=>{ startTic(); });
+    ticChangeDiff.addEventListener('click', ()=>{ ticOverlay.style.display='none'; });
+    ticCloseBtnSecondary.addEventListener('click', ()=>{ closeTic(); });
+
+    function openTic(){
+      if(!canActivate('openTic')) return;
+      ticWin.style.display='block'; ticWin.classList.remove('hide'); ticWin.classList.add('show');
+      startTic();
+      addOrUpdateTaskbarItem('tictac', 'Tic Tac Toe', 'tictactoe.png');
+      ticWin.style.zIndex = ++maxZ;
+      setActiveSlot('tictac');
+    }
+    function closeTic(){
+      if(!canActivate('closeTic')) return;
+      ticWin.classList.remove('show'); ticWin.classList.add('hide');
+      setTimeout(()=>{ ticWin.style.display='none'; ticWin.classList.remove('hide'); removeTaskbarItem('tictac'); }, 220);
+    }
+    ticIcon.addEventListener('click', e=>{ if(ticIcon._moved) return; openTic(); });
+    ticClose.addEventListener('click', closeTic);
+
+    function openPC(){ if(!canActivate('openPC')) return; pcWin.style.display='block'; pcWin.classList.remove('hide'); pcWin.classList.add('show'); populatePCInfo(); addOrUpdateTaskbarItem('thispc','This PC','thispc.png'); pcWin.style.zIndex = ++maxZ; setActiveSlot('thispc'); }
+    function closePC(){ if(!canActivate('closePC')) return; pcWin.classList.remove('show'); pcWin.classList.add('hide'); setTimeout(()=>{ pcWin.style.display='none'; pcWin.classList.remove('hide'); removeTaskbarItem('thispc'); },220); }
+    function populatePCInfo(){
+      pcInfoContainer.innerHTML = '';
+      function addCard(title, items){
+        const card = document.createElement('div'); card.className='pc-info-card';
+        card.innerHTML = `<div class="pc-info-title">${title}</div>`;
+        items.forEach(it=>{ const row = document.createElement('div'); row.className='pc-info-item'; row.innerHTML = `<div class="pc-info-label">${it.label}</div><div class="pc-info-value">${it.value}</div>`; card.appendChild(row); });
+        pcInfoContainer.appendChild(card);
+      }
+      addCard('System', [{label:'OS',value:navigator.platform||'Unknown'},{label:'Browser',value:navigator.userAgent.split(')')[0]+')'},{label:'Language',value:navigator.language||'Unknown'}]);
+      addCard('Screen', [{label:'Resolution',value:screen.width+' x '+screen.height},{label:'Color Depth',value:screen.colorDepth}]);
+      addCard('Storage', [{label:'LocalStorage Used',value:Object.keys(localStorage).length+' items'},{label:'Cookies',value:document.cookie?document.cookie.split(';').length+' items':'0'}]);
+    }
+    thispcIcon.addEventListener('click', e=>{ if(thispcIcon._moved) return; openPC(); });
+    pcClose.addEventListener('click', closePC);
+
+    function closeAll(){ closeKlout(); closeSnake(); closePC(); closeTic(); }
+
+    document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeAll(); });
+
+    setTimeout(()=>{ eye.textContent='[ click here 2 boot ]'; }, 400);
+
+    Object.values(windowMap).forEach(win => {
+      win.addEventListener('pointerdown', () => {
+        const currentZ = parseInt(win.style.zIndex) || 60;
+        if (currentZ < maxZ) {
+          win.style.zIndex = ++maxZ;
+        }
+        const key = win.dataset.key;
+        setActiveSlot(key);
+      });
+    });
+  </script>
+</body>
+</html>
